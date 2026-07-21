@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#090b10">
+  <title>GameDock</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="brand">
+      <div class="brand-mark" aria-hidden="true">G</div>
+      <h1>GameDock</h1>
+    </header>
+
+    <div class="dashboard-layout single-panel">
+      <section class="control-card" aria-labelledby="serverTitle">
+      <div class="server-heading">
+        <div>
+          <p class="eyebrow">SERWER</p>
+          <h2 id="serverTitle">GameDock PC </h2>
+        </div>
+
+        <div class="status-pill">
+          <span id="statusDot" class="status-dot unknown"></span>
+          <span id="statusText">Sprawdzanie…</span>
+        </div>
+      </div>
+
+
+      <div class="power-controls">
+        <button
+          id="powerButton"
+          class="power-button unknown"
+          type="button"
+          aria-label="Sprawdź stan komputera">
+          <span class="power-ring" aria-hidden="true"></span>
+          <span class="power-symbol" aria-hidden="true">⏻</span>
+        </button>
+      </div>
+
+      <p id="actionHint" class="action-hint" hidden></p>
+
+      <div class="reset-controls">
+        <button
+          id="restartButton"
+          class="reset-button"
+          type="button"
+          aria-label="Zrestartuj komputer"
+          title="Restart">
+          <span class="reset-ring" aria-hidden="true"></span>
+          <span class="reset-symbol" aria-hidden="true">↻</span>
+        </button>
+        <span class="reset-label">RESET</span>
+      </div>
+
+      <section id="systemsSection" class="systems-section" hidden>
+        <div class="systems-heading">
+          <div>
+            <p class="eyebrow">SYSTEM</p>
+            <h3>Wybierz system</h3>
+          </div>
+        </div>
+
+        <div id="systemButtons" class="system-buttons"></div>
+        <p id="systemHint" class="system-hint"></p>
+      </section>
+
+      <p id="actionMessage" class="message" aria-live="polite"></p>
+      </section>
+
+      <section id="metricsSection" class="metrics-section metrics-panel" hidden>
+        <div class="metrics-heading">
+          <p class="eyebrow">OBCIĄŻENIE</p>
+          <span id="capacityBadge" class="capacity-badge unknown">Brak danych</span>
+        </div>
+
+        <div class="metrics-grid">
+          <article id="cpuMetric" class="metric-card">
+            <div class="metric-top"><span>CPU</span><strong id="cpuValue">—</strong></div>
+            <div class="metric-track"><span id="cpuBar"></span></div>
+            <p id="cpuDetail">—</p>
+          </article>
+
+          <article id="gpuMetric" class="metric-card">
+            <div class="metric-top"><span>GPU</span><strong id="gpuValue">—</strong></div>
+            <div class="metric-track"><span id="gpuBar"></span></div>
+            <p id="gpuDetail">—</p>
+          </article>
+
+          <article id="ramMetric" class="metric-card">
+            <div class="metric-top"><span>RAM</span><strong id="ramValue">—</strong></div>
+            <div class="metric-track"><span id="ramBar"></span></div>
+            <p id="ramDetail">—</p>
+          </article>
+
+          <article id="vramMetric" class="metric-card">
+            <div class="metric-top"><span>VRAM</span><strong id="vramValue">—</strong></div>
+            <div class="metric-track"><span id="vramBar"></span></div>
+            <p id="vramDetail">—</p>
+          </article>
+
+          <article id="diskMetric" class="metric-card metric-card-wide">
+            <div class="metric-top"><span>DYSK</span><strong id="diskValue">—</strong></div>
+            <div class="metric-track"><span id="diskBar"></span></div>
+            <p id="diskDetail">—</p>
+          </article>
+
+          <article id="rxMetric" class="metric-card network-metric">
+            <div class="metric-top"><span>RX</span><strong id="rxValue">—</strong></div>
+            <div class="metric-track"><span id="rxBar"></span></div>
+            <p id="rxDetail">Pobieranie</p>
+          </article>
+
+          <article id="txMetric" class="metric-card network-metric">
+            <div class="metric-top"><span>TX</span><strong id="txValue">—</strong></div>
+            <div class="metric-track"><span id="txBar"></span></div>
+            <p id="txDetail">Wysyłanie</p>
+          </article>
+        </div>
+
+        <section id="wolfSection" class="wolf-section" hidden>
+          <div class="wolf-heading">
+            <div>
+              <p class="eyebrow">SESJE WOLF</p>
+              <h3>Aktywne sesje</h3>
+            </div>
+            <span id="wolfSessionBadge" class="wolf-session-badge">0 / 0</span>
+          </div>
+
+          <div class="wolf-summary">
+            <span>Wolne miejsca</span>
+            <strong id="wolfFreeSlots">—</strong>
+          </div>
+
+          <div id="wolfSessionList" class="wolf-session-list"></div>
+          <p id="wolfMessage" class="wolf-message"></p>
+        </section>
+
+        <p id="metricsMessage" class="metrics-message"></p>
+      </section>
+    </div>
+  </main>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

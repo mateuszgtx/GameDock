@@ -1,0 +1,6 @@
+# Sprawdź ścieżki poleceniami:
+# command -v systemctl
+# command -v grub-reboot
+# Zapisz jako /etc/sudoers.d/99-wolf-control i ustaw chmod 0440.
+
+wolfctl ALL=(root) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff, /usr/bin/grub-reboot *
