@@ -1,10 +1,41 @@
 using System.Net;
 using System.Net.Sockets;
+using Microsoft.Extensions.Options;
+using WolfControl.Options;
 
 namespace WolfControl.Services;
 
-public sealed class WakeOnLanService
+public sealed class WakeOnLanService : IPowerOnService
 {
+    private readonly MachineOptions _options;
+    private readonly ILogger<WakeOnLanService> _logger;
+
+    public WakeOnLanService(
+        IOptions<MachineOptions> options,
+        ILogger<WakeOnLanService> logger)
+    {
+        _options = options.Value;
+        _logger = logger;
+    }
+
+    public async Task<PowerOnResult> PowerOnAsync(
+        CancellationToken cancellationToken)
+    {
+        await SendAsync(
+            _options.MacAddress,
+            _options.BroadcastAddress,
+            _options.WakePort,
+            cancellationToken);
+
+        _logger.LogInformation(
+            "Wysłano pakiet Wake-on-LAN dla {Mac}",
+            _options.MacAddress);
+
+        return new PowerOnResult(
+            true,
+            "Wysłano pakiet Wake-on-LAN.");
+    }
+
     public async Task SendAsync(
         string macAddress,
         string broadcastAddress,

@@ -11,14 +11,22 @@ let switchingSystemId = null;
 let pendingOperation = null;
 let pendingOperationTimer = null;
 let operationFailed = false;
+let failedTargetSystemId = null;
+let graphicalInterfaceStatus = null;
+let graphicalActionInProgress = false;
 
 const OPERATION_TIMEOUT_MS = 30_000;
+const BOOT_SEQUENCE_TIMEOUT_MS = 270_000;
 const RESTART_MINIMUM_WAIT_MS = 8_000;
 
 const actionMessage = document.querySelector("#actionMessage");
 const powerButton = document.querySelector("#powerButton");
 const restartButton = document.querySelector("#restartButton");
 const resetControls = document.querySelector(".reset-controls");
+const graphicsControls = document.querySelector("#graphicsControls");
+const graphicsButton = document.querySelector("#graphicsButton");
+const graphicsState = document.querySelector("#graphicsState");
+const graphicsMessage = document.querySelector("#graphicsMessage");
 const statusDot = document.querySelector("#statusDot");
 const statusText = document.querySelector("#statusText");
 const actionHint = document.querySelector("#actionHint");
@@ -91,13 +99,22 @@ function setMessage(text, isError = false) {
 }
 
 function isBusy() {
-  return actionInProgress || pendingOperation !== null;
+  return actionInProgress
+    || graphicalActionInProgress
+    || pendingOperation !== null;
 }
 
 function operationLabel(type) {
   if (type === "wake") return "Uruchamianie…";
   if (type === "switch") return "Przełączanie systemu…";
+  if (type === "cold-switch") return "Uruchamianie wybranego systemu…";
   return "Restartowanie…";
+}
+
+function operationTimeout(type) {
+  return type === "cold-switch"
+    ? BOOT_SEQUENCE_TIMEOUT_MS
+    : OPERATION_TIMEOUT_MS;
 }
 
 function showPendingOperation() {
@@ -111,7 +128,8 @@ function showPendingOperation() {
   actionHint.hidden = true;
 
   const restartWorking = pendingOperation.type === "restart"
-    || pendingOperation.type === "switch";
+    || pendingOperation.type === "switch"
+    || pendingOperation.type === "cold-switch";
   restartButton.classList.toggle("working", restartWorking);
 }
 
@@ -121,13 +139,15 @@ function beginPendingOperation(type, targetSystemId = null) {
   }
 
   operationFailed = false;
+  failedTargetSystemId = null;
   const startedAt = Date.now();
+  const timeout = operationTimeout(type);
 
   pendingOperation = {
     type,
     targetSystemId,
     startedAt,
-    deadline: startedAt + OPERATION_TIMEOUT_MS,
+    deadline: startedAt + timeout,
     sawOffline: false
   };
 
@@ -135,7 +155,7 @@ function beginPendingOperation(type, targetSystemId = null) {
     if (pendingOperation) {
       failPendingOperation();
     }
-  }, OPERATION_TIMEOUT_MS + 100);
+  }, timeout + 100);
 
   showPendingOperation();
   hideMetrics();
@@ -153,7 +173,8 @@ function clearPendingOperation() {
   restartButton.classList.remove("working");
 }
 
-function failPendingOperation(message = "Nie wykryto komputera lub systemu w ciągu 30 sekund.") {
+function failPendingOperation(message = "Nie udało się wykryć docelowego systemu w wymaganym czasie.") {
+  failedTargetSystemId = pendingOperation?.targetSystemId ?? null;
   clearPendingOperation();
   operationFailed = true;
 
@@ -182,7 +203,8 @@ function pendingOperationFinished(status) {
     return detectedSystem;
   }
 
-  if (pendingOperation.type === "switch") {
+  if (pendingOperation.type === "switch"
+      || pendingOperation.type === "cold-switch") {
     return detectedSystem
       && status.currentSystemId === pendingOperation.targetSystemId
       && (pendingOperation.sawOffline || elapsed >= RESTART_MINIMUM_WAIT_MS);
@@ -198,6 +220,7 @@ function evaluatePendingOperation(status) {
   if (pendingOperationFinished(status)) {
     clearPendingOperation();
     operationFailed = false;
+    failedTargetSystemId = null;
     setMessage("");
     return false;
   }
@@ -215,8 +238,10 @@ function evaluatePendingOperation(status) {
 function updateButtons() {
   const knownState = currentState === "online" || currentState === "offline";
   const online = currentState === "online";
+  const offline = currentState === "offline";
   const restartAvailable = online && canRestart;
-  const systemSwitchAvailable = online && canSwitchSystem;
+  const systemStartAvailable = offline
+    || (online && (canSwitchSystem || canRestart));
   const busy = isBusy();
 
   powerButton.disabled = busy || !knownState;
@@ -227,17 +252,31 @@ function updateButtons() {
     "aria-disabled",
     String(!restartAvailable || busy));
 
+  const graphicsAvailable = Boolean(
+    graphicalInterfaceStatus?.enabled
+      && graphicalInterfaceStatus?.available);
+
+  graphicsButton.disabled = busy || !graphicsAvailable;
+  graphicsControls.classList.toggle(
+    "locked",
+    !graphicsAvailable && !graphicalActionInProgress);
+  graphicsControls.setAttribute(
+    "aria-disabled",
+    String(!graphicsAvailable || busy));
+
   systemsSection.classList.toggle(
     "locked",
-    !systemSwitchAvailable && !pendingOperation);
+    !systemStartAvailable && !pendingOperation);
   systemsSection.setAttribute(
     "aria-disabled",
-    String(!systemSwitchAvailable || busy));
+    String(!systemStartAvailable || busy));
 
   document.querySelectorAll(".system-button").forEach(button => {
-    const isCurrent = button.dataset.systemId === currentSystemId;
+    const isCurrent = online
+      && button.dataset.systemId === currentSystemId;
     button.disabled = busy
-      || !systemSwitchAvailable
+      || !knownState
+      || !systemStartAvailable
       || isCurrent;
   });
 }
@@ -278,8 +317,61 @@ function renderSystems(status) {
     button.setAttribute("aria-pressed", String(active));
   });
 
-  systemHint.textContent = "";
-  systemHint.hidden = true;
+  if (currentState === "offline") {
+    systemHint.textContent = "";
+    systemHint.hidden = true;
+  } else if (currentState === "online" && !canSwitchSystem && canRestart) {
+    systemHint.textContent = "Zmiana systemu wykona restart do domyślnego Linuksa, a następnie ustawi wybrany wpis GRUB.";
+    systemHint.hidden = false;
+  } else {
+    systemHint.textContent = "";
+    systemHint.hidden = true;
+  }
+
+  updateButtons();
+}
+
+function renderGraphicalInterface(status) {
+  graphicalInterfaceStatus = status ?? null;
+
+  const configured = Boolean(status?.enabled);
+  graphicsControls.hidden = !configured;
+
+  if (!configured) {
+    graphicsButton.className = "graphics-button";
+    graphicsButton.setAttribute("aria-pressed", "false");
+    graphicsState.textContent = "Wyłączone";
+    graphicsMessage.textContent = "";
+    updateButtons();
+    return;
+  }
+
+  const active = Boolean(status.active);
+  graphicsButton.className = graphicalActionInProgress
+    ? "graphics-button working"
+    : `graphics-button ${active ? "active" : "inactive"}`;
+  graphicsButton.setAttribute("aria-pressed", String(active));
+  graphicsButton.setAttribute(
+    "aria-label",
+    active
+      ? "Wyłącz interfejs graficzny"
+      : "Uruchom interfejs graficzny");
+  graphicsButton.setAttribute(
+    "title",
+    active
+      ? "Wyłącz GUI i pozostaw konsolę"
+      : "Uruchom GUI");
+
+  if (graphicalActionInProgress) {
+    graphicsState.textContent = "Przełączanie…";
+    graphicsMessage.textContent = "Wysyłanie polecenia do domyślnego Linuksa.";
+  } else if (!status.available) {
+    graphicsState.textContent = "Niedostępne";
+    graphicsMessage.textContent = status.message ?? "Uruchom domyślny Linux.";
+  } else {
+    graphicsState.textContent = active ? "GUI włączone" : "Tylko konsola";
+    graphicsMessage.textContent = status.message ?? "";
+  }
 
   updateButtons();
 }
@@ -323,8 +415,13 @@ function renderStatus(status) {
 
   // Jeżeli system pojawi się później niż po 30 sekundach, panel sam wróci
   // do prawidłowego koloru bez konieczności odświeżania strony.
-  if (operationFailed && status.online && status.currentSystemId) {
+  if (operationFailed
+      && status.online
+      && status.currentSystemId
+      && (!failedTargetSystemId
+          || status.currentSystemId === failedTargetSystemId)) {
     operationFailed = false;
+    failedTargetSystemId = null;
     setMessage("");
   }
 
@@ -642,13 +739,43 @@ async function refreshMetrics() {
   }
 }
 
+function syncBootSequence(bootSequence) {
+  if (!bootSequence) return;
+
+  const matchingColdSwitch = pendingOperation?.type === "cold-switch"
+    && pendingOperation.targetSystemId === bootSequence.targetSystemId;
+
+  if (bootSequence.active) {
+    switchingSystemId = bootSequence.targetSystemId;
+
+    if (!matchingColdSwitch) {
+      beginPendingOperation("cold-switch", bootSequence.targetSystemId);
+    }
+
+    setMessage(bootSequence.message || "Uruchamianie wybranego systemu…");
+    return;
+  }
+
+  if (matchingColdSwitch
+      && bootSequence.stage === "failed") {
+    failPendingOperation(bootSequence.message);
+  }
+}
+
 async function refreshStatus() {
   if (statusRequestInProgress) return;
   statusRequestInProgress = true;
 
   try {
-    const status = await api("/api/machine/status");
+    const [status, bootSequence, graphicalInterface] = await Promise.all([
+      api("/api/machine/status"),
+      api("/api/machine/boot-sequence"),
+      api("/api/machine/graphical-interface")
+    ]);
+
+    syncBootSequence(bootSequence);
     renderStatus(status);
+    renderGraphicalInterface(graphicalInterface);
     await refreshMetrics();
   } catch {
     renderStatus({
@@ -662,6 +789,7 @@ async function refreshStatus() {
       canSwitchSystem: false
     });
 
+    renderGraphicalInterface(graphicalInterfaceStatus);
     hideMetrics();
 
     if (!isBusy()) {
@@ -698,6 +826,7 @@ async function runAction({
       setMessage(result.message ?? "Polecenie wysłane");
     }
   } catch (error) {
+    failedTargetSystemId = targetSystemId;
     clearPendingOperation();
     operationFailed = true;
     statusDot.className = "status-dot failed";
@@ -717,15 +846,54 @@ async function runAction({
   }
 }
 
-async function switchSystem(system) {
-  if (isBusy()
-      || currentState !== "online"
-      || !canSwitchSystem
-      || system.id === currentSystemId) {
+async function toggleGraphicalInterface() {
+  if (isBusy() || !graphicalInterfaceStatus?.available) return;
+
+  if (graphicalInterfaceStatus.active
+      && !confirm("Wyłączyć interfejs graficzny? Lokalna sesja pulpitu i otwarte programy graficzne zostaną zamknięte.")) {
     return;
   }
 
-  if (!confirm(`Uruchomić system ${system.name}? Komputer zostanie zrestartowany.`)) {
+  graphicalActionInProgress = true;
+  renderGraphicalInterface(graphicalInterfaceStatus);
+  setMessage(
+    graphicalInterfaceStatus.active
+      ? "Wyłączanie interfejsu graficznego…"
+      : "Uruchamianie interfejsu graficznego…");
+
+  try {
+    const result = await api(
+      "/api/machine/graphical-interface/toggle",
+      { method: "POST" });
+
+    setMessage(result.message ?? "Przełączono interfejs graficzny.");
+  } catch (error) {
+    setMessage(`Nie udało się przełączyć GUI: ${error.message}`, true);
+  } finally {
+    graphicalActionInProgress = false;
+    updateButtons();
+    window.setTimeout(refreshStatus, 500);
+  }
+}
+
+async function switchSystem(system) {
+  const online = currentState === "online";
+  const offline = currentState === "offline";
+  const canStartSystem = offline
+    || (online && (canSwitchSystem || canRestart));
+
+  if (isBusy()
+      || !canStartSystem
+      || (online && system.id === currentSystemId)) {
+    return;
+  }
+
+  const needsBootSequence = offline || !canSwitchSystem;
+  const question = needsBootSequence
+    ? `Uruchomić system ${system.name}? Najpierw wystartuje domyślny Linux, który ustawi GRUB.`
+    : `Uruchomić system ${system.name}? Komputer zostanie zrestartowany.`;
+
+  if (!confirm(question)) {
     return;
   }
 
@@ -737,13 +905,19 @@ async function switchSystem(system) {
   });
 
   await runAction({
-    path: `/api/machine/systems/${encodeURIComponent(system.id)}/boot`,
-    pendingText: `Przełączanie na ${system.name}…`,
+    path: needsBootSequence
+      ? `/api/machine/systems/${encodeURIComponent(system.id)}/wake-boot`
+      : `/api/machine/systems/${encodeURIComponent(system.id)}/boot`,
+    pendingText: needsBootSequence
+      ? `Uruchamianie ${system.name} przez domyślnego Linuksa…`
+      : `Przełączanie na ${system.name}…`,
     source: "system",
-    operationType: "switch",
+    operationType: needsBootSequence ? "cold-switch" : "switch",
     targetSystemId: system.id
   });
 }
+
+graphicsButton.addEventListener("click", toggleGraphicalInterface);
 
 powerButton.addEventListener("click", async () => {
   if (isBusy()) return;

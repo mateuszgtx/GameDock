@@ -1,0 +1,3 @@
+# Dostęp do urządzenia HID Gadget dla usługi GameDock.
+# gamedock.service.example ma już SupplementaryGroups=gpio.
+KERNEL=="hidg[0-9]*", MODE="0660", GROUP="gpio"

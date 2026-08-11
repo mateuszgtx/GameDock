@@ -1,0 +1,19 @@
+[Unit]
+Description=GameDock panel i przyciski GPIO
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Zmień obie wartości na konto uruchamiające GameDock.
+User=TWOJ_UZYTKOWNIK
+Group=TWOJ_UZYTKOWNIK
+SupplementaryGroups=gpio
+WorkingDirectory=/opt/gamedock
+ExecStart=/usr/bin/dotnet /opt/gamedock/StartPanel.dll
+Restart=always
+RestartSec=3
+Environment=ASPNETCORE_ENVIRONMENT=Production
+
+[Install]
+WantedBy=multi-user.target

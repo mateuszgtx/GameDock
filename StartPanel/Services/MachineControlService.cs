@@ -29,6 +29,14 @@ public sealed record MachineActionResult(
     bool Success,
     string Message);
 
+public sealed record GraphicalInterfaceStatus(
+    bool Enabled,
+    bool Available,
+    bool Active,
+    string? SystemId,
+    string? SystemName,
+    string Message);
+
 public sealed class MachineControlService
 {
     private static readonly Regex GrubEntryPattern = new(
@@ -36,7 +44,7 @@ public sealed class MachineControlService
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly MachineOptions _options;
-    private readonly WakeOnLanService _wakeOnLan;
+    private readonly IPowerOnService _powerOn;
     private readonly ILogger<MachineControlService> _logger;
     private readonly SemaphoreSlim _actionGate = new(1, 1);
     private readonly object _systemCacheLock = new();
@@ -47,11 +55,11 @@ public sealed class MachineControlService
 
     public MachineControlService(
         IOptions<MachineOptions> options,
-        WakeOnLanService wakeOnLan,
+        IPowerOnService powerOn,
         ILogger<MachineControlService> logger)
     {
         _options = options.Value;
-        _wakeOnLan = wakeOnLan;
+        _powerOn = powerOn;
         _logger = logger;
     }
 
@@ -121,19 +129,12 @@ public sealed class MachineControlService
         {
             ClearSystemCache();
 
-            await _wakeOnLan.SendAsync(
-                _options.MacAddress,
-                _options.BroadcastAddress,
-                _options.WakePort,
+            PowerOnResult result = await _powerOn.PowerOnAsync(
                 cancellationToken);
 
-            _logger.LogInformation(
-                "Wysłano pakiet Wake-on-LAN dla {Mac}",
-                _options.MacAddress);
-
             return new MachineActionResult(
-                true,
-                "Wysłano pakiet Wake-on-LAN.");
+                result.Success,
+                result.Message);
         }
         finally
         {
@@ -273,6 +274,179 @@ public sealed class MachineControlService
             $"Wybrano {target.Name}. Komputer uruchamia się ponownie.",
             cancellationToken,
             clearSystemCache: true);
+    }
+
+    public async Task<GraphicalInterfaceStatus> GetGraphicalInterfaceStatusAsync(
+        CancellationToken cancellationToken)
+    {
+        GraphicalInterfaceOptions graphical = _options.GraphicalInterface;
+        string targetSystemId = ResolveGraphicalSystemId();
+        BootSystemOptions? target = FindSystem(targetSystemId);
+
+        if (!graphical.Enabled)
+        {
+            return new GraphicalInterfaceStatus(
+                Enabled: false,
+                Available: false,
+                Active: false,
+                SystemId: target?.Id ?? targetSystemId,
+                SystemName: target?.Name,
+                Message: "Sterowanie interfejsem graficznym jest wyłączone w konfiguracji.");
+        }
+
+        if (target is null)
+        {
+            return new GraphicalInterfaceStatus(
+                Enabled: true,
+                Available: false,
+                Active: false,
+                SystemId: targetSystemId,
+                SystemName: null,
+                Message: $"Nie znaleziono systemu '{targetSystemId}' dla interfejsu graficznego.");
+        }
+
+        if (string.IsNullOrWhiteSpace(graphical.StatusCommand))
+        {
+            return new GraphicalInterfaceStatus(
+                Enabled: true,
+                Available: false,
+                Active: false,
+                SystemId: target.Id,
+                SystemName: target.Name,
+                Message: "Brakuje Machine:GraphicalInterface:StatusCommand.");
+        }
+
+        MachineStatus machineStatus = await GetStatusAsync(cancellationToken);
+
+        if (!machineStatus.Online)
+        {
+            return new GraphicalInterfaceStatus(
+                Enabled: true,
+                Available: false,
+                Active: false,
+                SystemId: target.Id,
+                SystemName: target.Name,
+                Message: "Komputer jest wyłączony lub nie odpowiada.");
+        }
+
+        if (!string.Equals(
+                machineStatus.CurrentSystemId,
+                target.Id,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new GraphicalInterfaceStatus(
+                Enabled: true,
+                Available: false,
+                Active: false,
+                SystemId: target.Id,
+                SystemName: target.Name,
+                Message: $"Przełączanie GUI jest dostępne tylko w systemie {target.Name}.");
+        }
+
+        try
+        {
+            CommandResult status = await RunSshQueryAsync(
+                target,
+                graphical.StatusCommand,
+                cancellationToken);
+
+            EnsureGraphicalStatusResult(status);
+            bool active = IsGraphicalInterfaceActive(status);
+            string stateMessage = active
+                ? "Interfejs graficzny jest uruchomiony."
+                : "Interfejs graficzny jest wyłączony.";
+
+            return new GraphicalInterfaceStatus(
+                Enabled: true,
+                Available: true,
+                Active: active,
+                SystemId: target.Id,
+                SystemName: target.Name,
+                Message: stateMessage);
+        }
+        catch (Exception ex) when (
+            ex is SshException
+            or SocketException
+            or InvalidOperationException)
+        {
+            _logger.LogWarning(
+                ex,
+                "Nie udało się sprawdzić stanu interfejsu graficznego w systemie {SystemId}.",
+                target.Id);
+
+            return new GraphicalInterfaceStatus(
+                Enabled: true,
+                Available: false,
+                Active: false,
+                SystemId: target.Id,
+                SystemName: target.Name,
+                Message: $"Nie udało się sprawdzić GUI: {ex.Message}");
+        }
+    }
+
+    public async Task<MachineActionResult> ToggleGraphicalInterfaceAsync(
+        CancellationToken cancellationToken)
+    {
+        GraphicalInterfaceOptions graphical = _options.GraphicalInterface;
+        string targetSystemId = ResolveGraphicalSystemId();
+        BootSystemOptions? target = FindSystem(targetSystemId);
+
+        if (!graphical.Enabled)
+        {
+            return new MachineActionResult(
+                false,
+                "Sterowanie interfejsem graficznym jest wyłączone w konfiguracji.");
+        }
+
+        if (target is null)
+        {
+            return new MachineActionResult(
+                false,
+                $"Nie znaleziono systemu '{targetSystemId}' dla interfejsu graficznego.");
+        }
+
+        if (string.IsNullOrWhiteSpace(graphical.StatusCommand)
+            || string.IsNullOrWhiteSpace(graphical.StartCommand)
+            || string.IsNullOrWhiteSpace(graphical.StopCommand))
+        {
+            return new MachineActionResult(
+                false,
+                "Konfiguracja komend interfejsu graficznego jest niepełna.");
+        }
+
+        MachineStatus machineStatus = await GetStatusAsync(cancellationToken);
+
+        if (!machineStatus.Online)
+        {
+            return new MachineActionResult(
+                false,
+                "Komputer jest wyłączony lub nie odpowiada.");
+        }
+
+        if (!string.Equals(
+                machineStatus.CurrentSystemId,
+                target.Id,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new MachineActionResult(
+                false,
+                $"Interfejs graficzny można przełączać tylko w systemie {target.Name}.");
+        }
+
+        await _actionGate.WaitAsync(cancellationToken);
+
+        try
+        {
+            return await Task.Run(
+                () => ToggleGraphicalInterface(
+                    target,
+                    graphical),
+                cancellationToken);
+        }
+        finally
+        {
+            _actionGate.Release();
+        }
     }
 
     private MachineStatus BuildStatus(
@@ -433,6 +607,110 @@ public sealed class MachineControlService
         }
     }
 
+    private async Task<CommandResult> RunSshQueryAsync(
+        BootSystemOptions system,
+        string command,
+        CancellationToken cancellationToken)
+    {
+        await _actionGate.WaitAsync(cancellationToken);
+
+        try
+        {
+            return await Task.Run(
+                () => ExecuteSshQuery(system, command),
+                cancellationToken);
+        }
+        finally
+        {
+            _actionGate.Release();
+        }
+    }
+
+    private CommandResult ExecuteSshQuery(
+        BootSystemOptions system,
+        string command)
+    {
+        using SshClient client = CreateSshClient(system);
+        client.Connect();
+
+        CommandResult result = ExecuteDetectionCommand(client, command);
+        client.Disconnect();
+
+        return result;
+    }
+
+    private MachineActionResult ToggleGraphicalInterface(
+        BootSystemOptions system,
+        GraphicalInterfaceOptions graphical)
+    {
+        using SshClient client = CreateSshClient(system);
+        client.Connect();
+
+        CommandResult status = ExecuteDetectionCommand(
+            client,
+            graphical.StatusCommand);
+
+        EnsureGraphicalStatusResult(status);
+        bool active = IsGraphicalInterfaceActive(status);
+        string command = active
+            ? graphical.StopCommand
+            : graphical.StartCommand;
+
+        using SshCommand sshCommand = client.CreateCommand(command);
+        sshCommand.CommandTimeout = TimeSpan.FromSeconds(20);
+
+        string output = sshCommand.Execute();
+        int exitStatus = sshCommand.ExitStatus ?? -1;
+
+        if (exitStatus != 0)
+        {
+            throw new InvalidOperationException(
+                $"Polecenie GUI zakończyło się kodem {exitStatus}: " +
+                $"{sshCommand.Error}");
+        }
+
+        _logger.LogInformation(
+            "{Action} interfejs graficzny w systemie {SystemId}. Wynik: {Output}",
+            active ? "Wyłączono" : "Uruchomiono",
+            system.Id,
+            output.Trim());
+
+        client.Disconnect();
+
+        return new MachineActionResult(
+            true,
+            active
+                ? "Wyłączono interfejs graficzny. System nadal działa w konsoli."
+                : "Uruchomiono interfejs graficzny.");
+    }
+
+    private static void EnsureGraphicalStatusResult(CommandResult result)
+    {
+        if (result.ExitStatus < 0)
+        {
+            throw new InvalidOperationException(
+                $"Nie udało się odczytać stanu GUI: {result.Output}");
+        }
+    }
+
+    private bool IsGraphicalInterfaceActive(CommandResult result)
+    {
+        string expected = string.IsNullOrWhiteSpace(
+            _options.GraphicalInterface.ActiveState)
+            ? "active"
+            : _options.GraphicalInterface.ActiveState.Trim();
+
+        return result.Output
+            .Split(
+                new[] { '\r', '\n' },
+                StringSplitOptions.RemoveEmptyEntries
+                    | StringSplitOptions.TrimEntries)
+            .Any(line => string.Equals(
+                line,
+                expected,
+                StringComparison.OrdinalIgnoreCase));
+    }
+
     private async Task<MachineActionResult> RunSshCommandAsync(
         BootSystemOptions system,
         string command,
@@ -553,6 +831,11 @@ public sealed class MachineControlService
         }
 
     }
+
+    private string ResolveGraphicalSystemId() =>
+        string.IsNullOrWhiteSpace(_options.GraphicalInterface.SystemId)
+            ? _options.BootManagerSystemId.Trim()
+            : _options.GraphicalInterface.SystemId.Trim();
 
     private string ResolveSshHost(BootSystemOptions system) =>
         string.IsNullOrWhiteSpace(system.SshHost)

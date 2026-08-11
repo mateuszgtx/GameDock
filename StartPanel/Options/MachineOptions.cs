@@ -21,10 +21,39 @@ public sealed class MachineOptions
     public string GrubRebootCommand { get; init; } =
         "sudo /usr/bin/grub-reboot";
 
+    // System uruchamiany domyślnie przez UEFI/BIOS. Musi być Linuksem,
+    // który ma dostęp do grub-reboot i może wykonać restart.
+    public string BootManagerSystemId { get; init; } = "linux";
+
+    public int BootSequenceTimeoutSeconds { get; init; } = 240;
+    public int BootSequencePollSeconds { get; init; } = 3;
     public int SystemDetectionCacheSeconds { get; init; } = 12;
     public int AgentTimeoutMs { get; init; } = 4000;
 
+    // Sterowanie lokalnym pulpitem na domyślnym Linuksie. Gdy SystemId jest
+    // pusty, używany jest BootManagerSystemId.
+    public GraphicalInterfaceOptions GraphicalInterface { get; init; } = new();
+
     public List<BootSystemOptions> Systems { get; init; } = new();
+}
+
+public sealed class GraphicalInterfaceOptions
+{
+    public bool Enabled { get; init; }
+    public string? SystemId { get; init; }
+
+    // systemctl is-active zwraca kod różny od zera także dla poprawnego stanu
+    // inactive, dlatego wynik jest rozpoznawany po tekście ActiveState.
+    public string StatusCommand { get; init; } =
+        "/usr/bin/systemctl is-active display-manager";
+
+    public string ActiveState { get; init; } = "active";
+
+    public string StartCommand { get; init; } =
+        "sudo /usr/bin/systemctl start display-manager";
+
+    public string StopCommand { get; init; } =
+        "sudo /usr/bin/systemctl stop display-manager";
 }
 
 public sealed class BootSystemOptions

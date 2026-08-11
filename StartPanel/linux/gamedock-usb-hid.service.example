@@ -1,0 +1,12 @@
+[Unit]
+Description=GameDock USB HID gadget
+After=systemd-modules-load.service sys-kernel-config.mount
+Before=gamedock.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/gamedock/linux/setup-usb-hid-gadget.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
