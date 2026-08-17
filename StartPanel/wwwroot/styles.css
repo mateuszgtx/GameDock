@@ -1294,3 +1294,378 @@ button:disabled {
 .graphics-controls[hidden] {
     display: none;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Niezależny serwer NAS                                                      */
+/* -------------------------------------------------------------------------- */
+.nas-device {
+    width: 100%;
+    margin-top: clamp(2.2rem, 4vh, 4.5rem);
+}
+
+.nas-device[hidden] {
+    display: none;
+}
+
+.device-section-heading {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: end;
+    gap: 1.1rem;
+    margin: 0 0 1.15rem;
+}
+
+.device-section-heading h2 {
+    margin: 0;
+}
+
+.device-section-heading .eyebrow {
+    margin-bottom: .2rem;
+}
+
+.device-section-line {
+    height: 1px;
+    margin-bottom: .42rem;
+    background: linear-gradient(90deg, rgba(85, 223, 145, .34), rgba(255, 255, 255, .04));
+}
+
+.nas-dashboard-layout {
+    align-items: stretch;
+}
+
+.nas-control-card,
+.nas-metrics-panel {
+    height: 100%;
+}
+
+.nas-control-note {
+    margin-top: 1.7rem;
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    gap: .85rem;
+    padding: .9rem;
+    border: 1px solid rgba(255, 255, 255, .07);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, .022);
+}
+
+.nas-control-note-icon {
+    width: 46px;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(85, 223, 145, .2);
+    border-radius: 13px;
+    color: #67eca3;
+    background: rgba(40, 129, 80, .08);
+    font-size: 1.35rem;
+}
+
+.nas-control-note strong {
+    display: block;
+    color: #dce4ef;
+    font-size: .8rem;
+}
+
+.nas-control-note p {
+    margin: .18rem 0 0;
+    color: #7f899a;
+    font-size: .7rem;
+    line-height: 1.45;
+}
+
+.nas-metrics-panel .metrics-heading > div h3 {
+    margin: .22rem 0 0;
+}
+
+.nas-metrics-grid .rate-only .metric-track {
+    opacity: .28;
+}
+
+.nas-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .7rem;
+    margin-top: .8rem;
+}
+
+.nas-info-card {
+    min-width: 0;
+    padding: .85rem;
+    border: 1px solid rgba(255, 255, 255, .07);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, .025);
+}
+
+.nas-info-card > span {
+    display: block;
+    color: #8c96a8;
+    font-size: .62rem;
+    font-weight: 850;
+    letter-spacing: .12em;
+}
+
+.nas-info-card > strong {
+    display: block;
+    margin-top: .4rem;
+    overflow: hidden;
+    color: #e1e7ef;
+    font-size: .98rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nas-info-card > small {
+    display: block;
+    margin-top: .24rem;
+    overflow: hidden;
+    color: #778294;
+    font-size: .65rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.health-text.available {
+    color: #67eca3;
+}
+
+.health-text.moderate {
+    color: #ffd477;
+}
+
+.health-text.busy {
+    color: #ff7884;
+}
+
+.health-text.unknown {
+    color: #a3adbc;
+}
+
+.nas-disks-section {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(255, 255, 255, .075);
+    border-radius: 18px;
+    background: rgba(7, 10, 15, .46);
+}
+
+.nas-disks-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.nas-disks-heading .eyebrow {
+    margin-bottom: .22rem;
+}
+
+.nas-disks-heading h3 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.nas-disk-list {
+    display: grid;
+    gap: .58rem;
+    margin-top: .8rem;
+}
+
+.nas-disk-list:empty {
+    display: none;
+}
+
+.nas-disk-item {
+    min-width: 0;
+    padding: .72rem;
+    border: 1px solid rgba(255, 255, 255, .055);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .022);
+}
+
+.nas-disk-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .8rem;
+}
+
+.nas-disk-identity {
+    min-width: 0;
+}
+
+.nas-disk-identity strong,
+.nas-disk-identity span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nas-disk-identity strong {
+    color: #dce4ef;
+    font-size: .76rem;
+}
+
+.nas-disk-identity span {
+    margin-top: .16rem;
+    color: #778294;
+    font-size: .64rem;
+}
+
+.nas-smart-badge {
+    flex: 0 0 auto;
+    padding: .28rem .48rem;
+    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 999px;
+    color: #9ba5b4;
+    font-size: .59rem;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.nas-smart-badge.available {
+    color: #67eca3;
+    border-color: rgba(85, 223, 145, .32);
+    background: rgba(40, 129, 80, .12);
+}
+
+.nas-smart-badge.moderate {
+    color: #ffd477;
+    border-color: rgba(255, 212, 119, .34);
+    background: rgba(163, 116, 28, .12);
+}
+
+.nas-smart-badge.busy {
+    color: #ff7884;
+    border-color: rgba(255, 82, 97, .38);
+    background: rgba(166, 42, 55, .14);
+}
+
+.nas-disk-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .55rem;
+    margin-top: .65rem;
+}
+
+.nas-disk-details > span {
+    min-width: 0;
+    padding: .48rem .55rem;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .022);
+}
+
+.nas-disk-details small,
+.nas-disk-details strong {
+    display: block;
+}
+
+.nas-disk-details small {
+    color: #697487;
+    font-size: .56rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+}
+
+.nas-disk-details strong {
+    margin-top: .18rem;
+    color: #cfd7e3;
+    font-size: .72rem;
+}
+
+.nas-disk-details .warm strong {
+    color: #ffd477;
+}
+
+.nas-disk-details .hot strong {
+    color: #ff7884;
+}
+
+@media (min-width: 961px) {
+    .device-section-heading {
+        margin-bottom: clamp(1rem, 1vw, 1.5rem);
+    }
+
+    .nas-info-grid {
+        gap: clamp(.7rem, .7vw, 1rem);
+        margin-top: clamp(.8rem, .75vw, 1.1rem);
+    }
+
+    .nas-info-card {
+        padding: clamp(.85rem, .8vw, 1.15rem);
+        border-radius: clamp(15px, .9vw, 20px);
+    }
+
+    .nas-info-card > span {
+        font-size: clamp(.62rem, .47vw, .76rem);
+    }
+
+    .nas-info-card > strong {
+        font-size: clamp(.98rem, .82vw, 1.25rem);
+    }
+
+    .nas-info-card > small {
+        font-size: clamp(.65rem, .5vw, .8rem);
+    }
+
+    .nas-disks-section {
+        padding: clamp(1rem, .95vw, 1.4rem);
+        border-radius: clamp(18px, 1.1vw, 24px);
+    }
+
+    .nas-disk-item {
+        padding: clamp(.72rem, .7vw, 1rem);
+    }
+
+    .nas-disk-identity strong,
+    .nas-disk-details strong {
+        font-size: clamp(.72rem, .57vw, .9rem);
+    }
+
+    .nas-disk-identity span,
+    .nas-disk-details small,
+    .nas-smart-badge {
+        font-size: clamp(.58rem, .46vw, .73rem);
+    }
+}
+
+@media (max-width: 960px) {
+    .nas-device {
+        margin-top: 2.2rem;
+    }
+
+    .nas-dashboard-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 430px) {
+    .device-section-heading {
+        grid-template-columns: 1fr;
+    }
+
+    .device-section-line {
+        display: none;
+    }
+
+    .nas-info-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: .55rem;
+    }
+
+    .nas-info-card {
+        padding: .7rem;
+    }
+
+    .nas-control-note {
+        grid-template-columns: 42px minmax(0, 1fr);
+        padding: .75rem;
+    }
+
+    .nas-control-note-icon {
+        width: 40px;
+        height: 40px;
+    }
+}

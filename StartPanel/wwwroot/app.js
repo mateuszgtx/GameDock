@@ -971,3 +971,554 @@ window.addEventListener("beforeunload", () => {
     window.clearTimeout(pendingOperationTimer);
   }
 });
+
+// -----------------------------------------------------------------------------
+// NAS - niezależne urządzenie
+// -----------------------------------------------------------------------------
+let nasState = "unknown";
+let nasEnabled = false;
+let nasActionInProgress = false;
+let nasRequestInProgress = false;
+let nasPendingOperation = null;
+let nasPendingTimer = null;
+let nasRefreshTimer = null;
+
+const NAS_WAKE_TIMEOUT_MS = 180_000;
+const NAS_SHUTDOWN_TIMEOUT_MS = 90_000;
+const NAS_RESTART_TIMEOUT_MS = 180_000;
+
+const nasDevice = document.querySelector("#nasDevice");
+const nasTitle = document.querySelector("#nasTitle");
+const nasStatusDot = document.querySelector("#nasStatusDot");
+const nasStatusText = document.querySelector("#nasStatusText");
+const nasPowerButton = document.querySelector("#nasPowerButton");
+const nasRestartButton = document.querySelector("#nasRestartButton");
+const nasResetControls = document.querySelector("#nasResetControls");
+const nasActionMessage = document.querySelector("#nasActionMessage");
+const nasMetricsSection = document.querySelector("#nasMetricsSection");
+const nasHealthBadge = document.querySelector("#nasHealthBadge");
+const nasMetricsMessage = document.querySelector("#nasMetricsMessage");
+const nasStorageState = document.querySelector("#nasStorageState");
+const nasStoragePool = document.querySelector("#nasStoragePool");
+const nasUptime = document.querySelector("#nasUptime");
+const nasHostInfo = document.querySelector("#nasHostInfo");
+const nasConnections = document.querySelector("#nasConnections");
+const nasSystemTemperature = document.querySelector("#nasSystemTemperature");
+const nasDiskCount = document.querySelector("#nasDiskCount");
+const nasDiskList = document.querySelector("#nasDiskList");
+const nasDiskMessage = document.querySelector("#nasDiskMessage");
+
+const nasMetricElements = {
+  storage: metricElement("nasStorage"),
+  cpu: metricElement("nasCpu"),
+  ram: metricElement("nasRam"),
+  read: metricElement("nasRead"),
+  write: metricElement("nasWrite"),
+  rx: metricElement("nasRx"),
+  tx: metricElement("nasTx")
+};
+
+function setNasMessage(text, isError = false) {
+  nasActionMessage.textContent = text || "";
+  nasActionMessage.classList.toggle("error", isError);
+}
+
+function clearNasPendingOperation() {
+  if (nasPendingTimer !== null) {
+    window.clearTimeout(nasPendingTimer);
+    nasPendingTimer = null;
+  }
+
+  nasPendingOperation = null;
+}
+
+function beginNasPendingOperation(type) {
+  clearNasPendingOperation();
+
+  const timeout = type === "shutdown"
+    ? NAS_SHUTDOWN_TIMEOUT_MS
+    : (type === "restart" ? NAS_RESTART_TIMEOUT_MS : NAS_WAKE_TIMEOUT_MS);
+
+  nasPendingOperation = {
+    type,
+    deadline: Date.now() + timeout,
+    sawOffline: false
+  };
+
+  nasPendingTimer = window.setTimeout(() => {
+    if (!nasPendingOperation) return;
+    clearNasPendingOperation();
+    setNasMessage("Nie udało się potwierdzić zakończenia operacji NAS w wymaganym czasie.", true);
+    updateNasButtons();
+  }, timeout + 100);
+}
+
+function nasPendingFinished(status) {
+  if (!nasPendingOperation) return false;
+
+  if (status.state === "offline") {
+    nasPendingOperation.sawOffline = true;
+  }
+
+  if (nasPendingOperation.type === "wake") {
+    return Boolean(status.online);
+  }
+
+  if (nasPendingOperation.type === "shutdown") {
+    return status.state === "offline";
+  }
+
+  return nasPendingOperation.sawOffline && Boolean(status.online);
+}
+
+function updateNasButtons() {
+  if (!nasEnabled) return;
+
+  const knownState = nasState === "online" || nasState === "offline";
+  const busy = nasActionInProgress || nasPendingOperation !== null;
+
+  nasPowerButton.disabled = busy || !knownState;
+  nasRestartButton.disabled = busy || nasState !== "online";
+  nasResetControls.classList.toggle("locked", nasState !== "online" && !busy);
+}
+
+function renderNasWorkingStatus() {
+  const type = nasPendingOperation?.type;
+  nasStatusDot.className = "status-dot working";
+  nasPowerButton.className = "power-button working";
+
+  if (type === "shutdown") {
+    nasStatusText.textContent = "Wyłączanie…";
+  } else if (type === "restart") {
+    nasStatusText.textContent = "Restartowanie…";
+    nasRestartButton.classList.add("working");
+  } else {
+    nasStatusText.textContent = "Uruchamianie…";
+  }
+
+  updateNasButtons();
+}
+
+function renderNasStatus(status) {
+  nasEnabled = Boolean(status?.enabled);
+  nasDevice.hidden = !nasEnabled;
+
+  if (!nasEnabled) return;
+
+  nasTitle.textContent = status.name || "NAS";
+  nasState = status.state || "unknown";
+
+  if (nasPendingOperation) {
+    if (nasPendingFinished(status)) {
+      clearNasPendingOperation();
+      nasRestartButton.classList.remove("working");
+      setNasMessage("");
+    } else if (Date.now() < nasPendingOperation.deadline) {
+      renderNasWorkingStatus();
+      return;
+    }
+  }
+
+  nasRestartButton.classList.remove("working");
+  nasStatusDot.className = `status-dot ${nasState}`;
+  nasPowerButton.className = `power-button ${nasState}`;
+
+  if (status.online) {
+    nasStatusText.textContent = status.roundtripTimeMs == null
+      ? "Online"
+      : `Online · ${status.roundtripTimeMs} ms`;
+    nasPowerButton.setAttribute("aria-label", "Wyłącz NAS");
+    nasPowerButton.setAttribute("title", "Wyłącz NAS");
+  } else if (nasState === "offline") {
+    nasStatusText.textContent = "Offline";
+    nasPowerButton.setAttribute("aria-label", "Włącz NAS");
+    nasPowerButton.setAttribute("title", "Włącz NAS");
+  } else {
+    nasStatusText.textContent = "Brak połączenia";
+    nasPowerButton.setAttribute("aria-label", "Stan NAS jest nieznany");
+    nasPowerButton.removeAttribute("title");
+  }
+
+  updateNasButtons();
+}
+
+function formatStorageBytes(value) {
+  if (!Number.isFinite(value) || value < 0) return "—";
+
+  const tib = value / (1024 ** 4);
+  if (tib >= 0.9) {
+    return `${tib >= 10 ? tib.toFixed(1) : tib.toFixed(2)} TB`;
+  }
+
+  const gib = value / (1024 ** 3);
+  if (gib >= 1) {
+    return `${gib >= 10 ? gib.toFixed(0) : gib.toFixed(1)} GB`;
+  }
+
+  const mib = value / (1024 ** 2);
+  return `${mib.toFixed(0)} MB`;
+}
+
+function formatDiskRate(bytesPerSecond) {
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond < 0) return "—";
+
+  if (bytesPerSecond >= 1024 ** 3) {
+    return `${(bytesPerSecond / (1024 ** 3)).toFixed(2)} GB/s`;
+  }
+  if (bytesPerSecond >= 1024 ** 2) {
+    return `${(bytesPerSecond / (1024 ** 2)).toFixed(1)} MB/s`;
+  }
+  if (bytesPerSecond >= 1024) {
+    return `${(bytesPerSecond / 1024).toFixed(0)} KB/s`;
+  }
+  return `${Math.round(bytesPerSecond)} B/s`;
+}
+
+function formatUptime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "—";
+
+  const totalHours = Math.floor(seconds / 3600);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  const minutes = Math.floor((seconds % 3600) / 60);
+
+  if (days > 0) return `${days} d ${hours} h`;
+  if (totalHours > 0) return `${totalHours} h ${minutes} min`;
+  return `${minutes} min`;
+}
+
+function renderNasRateMetric(element, bytesPerSecond, detail) {
+  const valid = Number.isFinite(bytesPerSecond) && bytesPerSecond >= 0;
+  element.value.textContent = valid ? formatDiskRate(bytesPerSecond) : "—";
+  element.bar.style.width = "0%";
+  element.detail.textContent = detail || "—";
+  element.card.classList.toggle("unavailable", !valid);
+  element.card.classList.remove("moderate", "busy");
+}
+
+function normalizeHealth(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function healthLevel(value) {
+  const state = normalizeHealth(value);
+  if (!state) return "unknown";
+  if (["healthy", "ok", "passed", "online", "optimal", "good"].includes(state)) {
+    return "available";
+  }
+  if (["warning", "rebuilding", "resilvering", "scrubbing"].includes(state)) {
+    return "moderate";
+  }
+  if (["degraded", "failed", "faulted", "critical", "bad", "error"].includes(state)) {
+    return "busy";
+  }
+  return "unknown";
+}
+
+function renderNasHealth(metrics) {
+  const storageLevel = healthLevel(metrics.storageState);
+  const disks = Array.isArray(metrics.disks) ? metrics.disks : [];
+  const diskLevels = disks.map(disk => healthLevel(disk.smartStatus));
+
+  let level = storageLevel;
+  if (diskLevels.includes("busy")) level = "busy";
+  else if (level !== "busy" && diskLevels.includes("moderate")) level = "moderate";
+  else if (level === "unknown" && diskLevels.length > 0 && diskLevels.every(x => x === "available")) level = "available";
+
+  nasHealthBadge.className = `capacity-badge ${level}`;
+  nasHealthBadge.textContent = level === "available"
+    ? "Healthy"
+    : (level === "moderate" ? "Warning" : (level === "busy" ? "Degraded" : "Brak danych"));
+}
+
+function renderNasDisks(disks) {
+  const items = Array.isArray(disks) ? disks : [];
+  nasDiskList.replaceChildren();
+  nasDiskCount.textContent = String(items.length);
+  nasDiskMessage.textContent = items.length === 0 ? "Brak danych o dyskach." : "";
+
+  for (const disk of items) {
+    const item = document.createElement("article");
+    item.className = "nas-disk-item";
+
+    const header = document.createElement("div");
+    header.className = "nas-disk-header";
+
+    const identity = document.createElement("div");
+    identity.className = "nas-disk-identity";
+    const name = document.createElement("strong");
+    name.textContent = disk.name || disk.id || "Dysk";
+    const model = document.createElement("span");
+    model.textContent = disk.model || formatStorageBytes(disk.capacityBytes);
+    identity.append(name, model);
+
+    const smart = document.createElement("span");
+    const smartLevel = healthLevel(disk.smartStatus);
+    smart.className = `nas-smart-badge ${smartLevel}`;
+    smart.textContent = disk.smartStatus || "Unknown";
+
+    header.append(identity, smart);
+
+    const details = document.createElement("div");
+    details.className = "nas-disk-details";
+
+    const capacity = document.createElement("span");
+    capacity.innerHTML = `<small>POJEMNOŚĆ</small><strong>${formatStorageBytes(disk.capacityBytes)}</strong>`;
+
+    const temperature = document.createElement("span");
+    const tempValue = Number.isFinite(disk.temperatureCelsius)
+      ? `${Math.round(disk.temperatureCelsius)}°C`
+      : "—";
+    temperature.innerHTML = `<small>TEMPERATURA</small><strong>${tempValue}</strong>`;
+    if (Number.isFinite(disk.temperatureCelsius) && disk.temperatureCelsius >= 55) {
+      temperature.classList.add("hot");
+    } else if (Number.isFinite(disk.temperatureCelsius) && disk.temperatureCelsius >= 45) {
+      temperature.classList.add("warm");
+    }
+
+    details.append(capacity, temperature);
+    item.append(header, details);
+    nasDiskList.append(item);
+  }
+}
+
+function renderNasMetricsUnavailable(message) {
+  nasMetricsSection.classList.add("unavailable");
+  nasHealthBadge.className = "capacity-badge unknown";
+  nasHealthBadge.textContent = "Brak danych";
+  nasMetricsMessage.textContent = message || "Agent NAS nie odpowiada.";
+
+  renderMetric(nasMetricElements.storage, null, "—");
+  renderMetric(nasMetricElements.cpu, null, "—");
+  renderMetric(nasMetricElements.ram, null, "—");
+  renderNasRateMetric(nasMetricElements.read, null, "Dyski / pool");
+  renderNasRateMetric(nasMetricElements.write, null, "Dyski / pool");
+  renderNetworkMetric(nasMetricElements.rx, null, null, "Download");
+  renderNetworkMetric(nasMetricElements.tx, null, null, "Upload");
+
+  nasStorageState.textContent = "—";
+  nasStorageState.className = "";
+  nasStoragePool.textContent = "—";
+  nasUptime.textContent = "—";
+  nasHostInfo.textContent = "—";
+  nasConnections.textContent = "—";
+  nasSystemTemperature.textContent = "—";
+  renderNasDisks([]);
+}
+
+function renderNasMetrics(metrics) {
+  if (!metrics?.available) {
+    renderNasMetricsUnavailable(metrics?.message);
+    return;
+  }
+
+  nasMetricsSection.classList.remove("unavailable");
+  nasMetricsMessage.textContent = "";
+
+  const storagePercent = ratioPercent(
+    metrics.storageUsedBytes,
+    metrics.storageTotalBytes);
+  const ramPercent = ratioPercent(
+    metrics.memoryUsedBytes,
+    metrics.memoryTotalBytes);
+
+  renderMetric(
+    nasMetricElements.storage,
+    storagePercent,
+    storagePercent == null
+      ? "—"
+      : `${Math.round(storagePercent)}% zajęte${metrics.storagePoolName ? ` · ${metrics.storagePoolName}` : ""}`);
+  nasMetricElements.storage.value.textContent =
+    Number.isFinite(metrics.storageUsedBytes) && Number.isFinite(metrics.storageTotalBytes)
+      ? `${formatStorageBytes(metrics.storageUsedBytes)} / ${formatStorageBytes(metrics.storageTotalBytes)}`
+      : "—";
+
+  const cpuTemps = [];
+  if (Number.isFinite(metrics.cpuTemperatureCelsius)) {
+    cpuTemps.push(`CPU ${Math.round(metrics.cpuTemperatureCelsius)}°C`);
+  }
+  if (Number.isFinite(metrics.systemTemperatureCelsius)) {
+    cpuTemps.push(`System ${Math.round(metrics.systemTemperatureCelsius)}°C`);
+  }
+
+  renderMetric(
+    nasMetricElements.cpu,
+    metrics.cpuPercent,
+    cpuTemps.length ? cpuTemps.join(" · ") : "Obciążenie procesora");
+
+  renderMetric(
+    nasMetricElements.ram,
+    ramPercent,
+    `${formatBytes(metrics.memoryUsedBytes)} / ${formatBytes(metrics.memoryTotalBytes)}`);
+
+  renderNasRateMetric(
+    nasMetricElements.read,
+    metrics.diskReadBytesPerSecond,
+    "Aktualny odczyt storage");
+  renderNasRateMetric(
+    nasMetricElements.write,
+    metrics.diskWriteBytesPerSecond,
+    "Aktualny zapis storage");
+
+  const interfaces = Array.isArray(metrics.networkInterfaces)
+    ? metrics.networkInterfaces.filter(Boolean).join(", ")
+    : "";
+  const networkDetail = interfaces || "Interfejs LAN";
+
+  renderNetworkMetric(
+    nasMetricElements.rx,
+    metrics.networkRxBytesPerSecond,
+    metrics.networkLinkSpeedBitsPerSecond,
+    `Download · ${networkDetail}`);
+  renderNetworkMetric(
+    nasMetricElements.tx,
+    metrics.networkTxBytesPerSecond,
+    metrics.networkLinkSpeedBitsPerSecond,
+    `Upload · ${networkDetail}`);
+
+  nasStorageState.textContent = metrics.storageState || "Unknown";
+  nasStorageState.className = `health-text ${healthLevel(metrics.storageState)}`;
+  nasStoragePool.textContent = metrics.storagePoolName || "Storage pool";
+  nasUptime.textContent = formatUptime(metrics.uptimeSeconds);
+
+  const hostParts = [];
+  if (metrics.hostName) hostParts.push(metrics.hostName);
+  if (metrics.operatingSystem) hostParts.push(metrics.operatingSystem);
+  nasHostInfo.textContent = hostParts.length ? hostParts.join(" · ") : "NAS";
+
+  nasConnections.textContent = Number.isFinite(metrics.activeConnections)
+    ? String(metrics.activeConnections)
+    : "—";
+
+  const systemTemps = [];
+  if (Number.isFinite(metrics.cpuTemperatureCelsius)) {
+    systemTemps.push(`${Math.round(metrics.cpuTemperatureCelsius)}°C CPU`);
+  }
+  if (Number.isFinite(metrics.systemTemperatureCelsius)) {
+    systemTemps.push(`${Math.round(metrics.systemTemperatureCelsius)}°C SYS`);
+  }
+  nasSystemTemperature.textContent = systemTemps.length
+    ? systemTemps.join(" / ")
+    : "—";
+
+  renderNasDisks(metrics.disks);
+  renderNasHealth(metrics);
+}
+
+async function refreshNasMetrics() {
+  if (!nasEnabled || nasState !== "online") {
+    renderNasMetricsUnavailable(
+      nasState === "offline"
+        ? "NAS jest wyłączony."
+        : "Stan NAS jest nieznany lub konfiguracja nie jest jeszcze kompletna.");
+    return;
+  }
+
+  try {
+    const metrics = await api("/api/nas/metrics");
+    renderNasMetrics(metrics);
+  } catch {
+    renderNasMetricsUnavailable("Nie można pobrać parametrów NAS.");
+  }
+}
+
+async function refreshNasStatus() {
+  if (nasRequestInProgress) return;
+  nasRequestInProgress = true;
+
+  try {
+    const status = await api("/api/nas/status");
+    renderNasStatus(status);
+
+    if (status.enabled) {
+      await refreshNasMetrics();
+    }
+  } catch {
+    if (nasEnabled) {
+      renderNasStatus({
+        enabled: true,
+        name: nasTitle.textContent || "NAS",
+        online: false,
+        state: "unknown",
+        roundtripTimeMs: null
+      });
+      renderNasMetricsUnavailable("Nie można połączyć się z obsługą NAS w panelu.");
+    }
+  } finally {
+    nasRequestInProgress = false;
+  }
+}
+
+async function runNasAction(path, pendingText, type) {
+  if (nasActionInProgress || nasPendingOperation) return;
+
+  nasActionInProgress = true;
+  beginNasPendingOperation(type);
+  renderNasWorkingStatus();
+  setNasMessage(pendingText);
+
+  try {
+    const result = await api(path, { method: "POST" });
+    setNasMessage(result.message || pendingText);
+  } catch (error) {
+    clearNasPendingOperation();
+    nasStatusDot.className = "status-dot failed";
+    nasStatusText.textContent = "Błąd";
+    nasPowerButton.className = "power-button failed";
+    setNasMessage(`Operacja NAS nie powiodła się: ${error.message}`, true);
+  } finally {
+    nasActionInProgress = false;
+    updateNasButtons();
+    window.setTimeout(refreshNasStatus, 800);
+  }
+}
+
+nasPowerButton.addEventListener("click", async () => {
+  if (!nasEnabled || nasActionInProgress || nasPendingOperation) return;
+
+  if (nasState === "offline") {
+    await runNasAction(
+      "/api/nas/wake",
+      "Uruchamianie NAS przez Wake-on-LAN…",
+      "wake");
+    return;
+  }
+
+  if (nasState === "online") {
+    if (!confirm("Wyłączyć NAS? Upewnij się, że nie trwa zapis danych ani przebudowa RAID.")) {
+      return;
+    }
+
+    await runNasAction(
+      "/api/nas/shutdown",
+      "Bezpieczne wyłączanie NAS…",
+      "shutdown");
+  }
+});
+
+nasRestartButton.addEventListener("click", async () => {
+  if (!nasEnabled || nasState !== "online" || nasActionInProgress || nasPendingOperation) return;
+
+  if (!confirm("Zrestartować NAS? Aktywne połączenia zostaną przerwane.")) {
+    return;
+  }
+
+  await runNasAction(
+    "/api/nas/restart",
+    "Restartowanie NAS…",
+    "restart");
+});
+
+refreshNasStatus();
+nasRefreshTimer = window.setInterval(refreshNasStatus, 3000);
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshNasStatus();
+});
+
+window.addEventListener("beforeunload", () => {
+  window.clearInterval(nasRefreshTimer);
+  if (nasPendingTimer !== null) {
+    window.clearTimeout(nasPendingTimer);
+  }
+});

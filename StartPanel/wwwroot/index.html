@@ -158,6 +158,159 @@
                 <p id="metricsMessage" class="metrics-message"></p>
             </section>
         </div>
+
+
+        <section id="nasDevice" class="nas-device" hidden aria-labelledby="nasTitle">
+            <div class="device-section-heading">
+                <div>
+                    <p class="eyebrow">MAGAZYN SIECIOWY</p>
+                    <h2>NAS</h2>
+                </div>
+                <span class="device-section-line" aria-hidden="true"></span>
+            </div>
+
+            <div class="dashboard-layout nas-dashboard-layout">
+                <section class="control-card nas-control-card">
+                    <div class="server-heading">
+                        <div>
+                            <p class="eyebrow">SERWER NAS</p>
+                            <h2 id="nasTitle">NAS</h2>
+                        </div>
+
+                        <div class="status-pill">
+                            <span id="nasStatusDot" class="status-dot unknown"></span>
+                            <span id="nasStatusText">Sprawdzanie…</span>
+                        </div>
+                    </div>
+
+                    <div class="power-controls nas-power-controls">
+                        <button id="nasPowerButton"
+                                class="power-button unknown"
+                                type="button"
+                                aria-label="Sprawdź stan NAS">
+                            <span class="power-ring" aria-hidden="true"></span>
+                            <span class="power-symbol" aria-hidden="true"></span>
+                        </button>
+                    </div>
+
+                    <p id="nasActionHint" class="action-hint" hidden></p>
+
+                    <div id="nasResetControls" class="reset-controls nas-reset-controls">
+                        <button id="nasRestartButton"
+                                class="reset-button"
+                                type="button"
+                                aria-label="Zrestartuj NAS"
+                                title="Restart NAS">
+                            <span class="reset-ring" aria-hidden="true"></span>
+                            <span class="reset-symbol" aria-hidden="true">↻</span>
+                        </button>
+                        <span class="reset-label">RESET NAS</span>
+                    </div>
+
+                    <div class="nas-control-note">
+                        <span class="nas-control-note-icon" aria-hidden="true">▦</span>
+                        <div>
+                            <strong>Niezależne urządzenie</strong>
+                            <p>Włączanie przez Wake-on-LAN, wyłączanie i restart przez SSH.</p>
+                        </div>
+                    </div>
+
+                    <p id="nasActionMessage" class="message" aria-live="polite"></p>
+                </section>
+
+                <section id="nasMetricsSection" class="metrics-section metrics-panel nas-metrics-panel">
+                    <div class="metrics-heading">
+                        <div>
+                            <p class="eyebrow">NAS · TELEMETRIA</p>
+                            <h3>Storage i system</h3>
+                        </div>
+                        <span id="nasHealthBadge" class="capacity-badge unknown">Brak danych</span>
+                    </div>
+
+                    <div class="metrics-grid nas-metrics-grid">
+                        <article id="nasStorageMetric" class="metric-card metric-card-wide">
+                            <div class="metric-top"><span>UŻYCIE PRZESTRZENI</span><strong id="nasStorageValue">—</strong></div>
+                            <div class="metric-track"><span id="nasStorageBar"></span></div>
+                            <p id="nasStorageDetail">—</p>
+                        </article>
+
+                        <article id="nasCpuMetric" class="metric-card">
+                            <div class="metric-top"><span>CPU</span><strong id="nasCpuValue">—</strong></div>
+                            <div class="metric-track"><span id="nasCpuBar"></span></div>
+                            <p id="nasCpuDetail">—</p>
+                        </article>
+
+                        <article id="nasRamMetric" class="metric-card">
+                            <div class="metric-top"><span>RAM</span><strong id="nasRamValue">—</strong></div>
+                            <div class="metric-track"><span id="nasRamBar"></span></div>
+                            <p id="nasRamDetail">—</p>
+                        </article>
+
+                        <article id="nasReadMetric" class="metric-card network-metric rate-only">
+                            <div class="metric-top"><span>ODCZYT</span><strong id="nasReadValue">—</strong></div>
+                            <div class="metric-track"><span id="nasReadBar"></span></div>
+                            <p id="nasReadDetail">Dyski / pool</p>
+                        </article>
+
+                        <article id="nasWriteMetric" class="metric-card network-metric rate-only">
+                            <div class="metric-top"><span>ZAPIS</span><strong id="nasWriteValue">—</strong></div>
+                            <div class="metric-track"><span id="nasWriteBar"></span></div>
+                            <p id="nasWriteDetail">Dyski / pool</p>
+                        </article>
+
+                        <article id="nasRxMetric" class="metric-card network-metric">
+                            <div class="metric-top"><span>LAN ↓</span><strong id="nasRxValue">—</strong></div>
+                            <div class="metric-track"><span id="nasRxBar"></span></div>
+                            <p id="nasRxDetail">Download</p>
+                        </article>
+
+                        <article id="nasTxMetric" class="metric-card network-metric">
+                            <div class="metric-top"><span>LAN ↑</span><strong id="nasTxValue">—</strong></div>
+                            <div class="metric-track"><span id="nasTxBar"></span></div>
+                            <p id="nasTxDetail">Upload</p>
+                        </article>
+                    </div>
+
+                    <div class="nas-info-grid">
+                        <article class="nas-info-card">
+                            <span>STAN RAID / POOL</span>
+                            <strong id="nasStorageState">—</strong>
+                            <small id="nasStoragePool">—</small>
+                        </article>
+                        <article class="nas-info-card">
+                            <span>UPTIME</span>
+                            <strong id="nasUptime">—</strong>
+                            <small id="nasHostInfo">—</small>
+                        </article>
+                        <article class="nas-info-card">
+                            <span>POŁĄCZENIA</span>
+                            <strong id="nasConnections">—</strong>
+                            <small>aktywne połączenia</small>
+                        </article>
+                        <article class="nas-info-card">
+                            <span>TEMP. SYSTEMU</span>
+                            <strong id="nasSystemTemperature">—</strong>
+                            <small>CPU / płyta</small>
+                        </article>
+                    </div>
+
+                    <section class="nas-disks-section" aria-labelledby="nasDisksTitle">
+                        <div class="nas-disks-heading">
+                            <div>
+                                <p class="eyebrow">DYSKI</p>
+                                <h3 id="nasDisksTitle">SMART i temperatury</h3>
+                            </div>
+                            <span id="nasDiskCount" class="wolf-session-badge">0</span>
+                        </div>
+                        <div id="nasDiskList" class="nas-disk-list"></div>
+                        <p id="nasDiskMessage" class="wolf-message"></p>
+                    </section>
+
+                    <p id="nasMetricsMessage" class="metrics-message"></p>
+                </section>
+            </div>
+        </section>
+
     </main>
 
     <script src="/app.js" defer></script>

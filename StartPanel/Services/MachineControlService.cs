@@ -68,16 +68,34 @@ public sealed class MachineControlService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        using var ping = new Ping();
-
         try
         {
-            PingReply reply = await ping.SendPingAsync(
-                _options.Host,
-                _options.PingTimeoutMs);
+            string[] hosts = _options.Systems
+                .Select(ResolveSshHost)
+                .Append(_options.Host)
+                .Where(host => !string.IsNullOrWhiteSpace(host))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
 
-            bool online = reply.Status == IPStatus.Success;
-            if (!online)
+            if (hosts.Length == 0)
+            {
+                ClearSystemCache();
+                return BuildStatus(false, null, "unknown", null);
+            }
+
+            Task<(bool Online, long? RoundtripTimeMs)>[] pingTasks = hosts
+                .Select(host => PingHostAsync(host, cancellationToken))
+                .ToArray();
+
+            (bool Online, long? RoundtripTimeMs)[] pingResults =
+                await Task.WhenAll(pingTasks);
+
+            (bool Online, long? RoundtripTimeMs) onlineResult = pingResults
+                .Where(result => result.Online)
+                .OrderBy(result => result.RoundtripTimeMs ?? long.MaxValue)
+                .FirstOrDefault();
+
+            if (!onlineResult.Online)
             {
                 ClearSystemCache();
                 return BuildStatus(false, null, "offline", null);
@@ -96,15 +114,19 @@ public sealed class MachineControlService
                 {
                     _logger.LogWarning(
                         ex,
-                        "Komputer odpowiada na ping, ale nie udało się wykryć systemu przez SSH.");
+                        "Co najmniej jeden host odpowiada na ping, ale nie udało się wykryć systemu przez SSH.");
                 }
             }
 
             return BuildStatus(
                 true,
-                reply.RoundtripTime,
+                onlineResult.RoundtripTimeMs,
                 "online",
                 currentSystemId);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex) when (
             ex is PingException
@@ -113,11 +135,45 @@ public sealed class MachineControlService
         {
             _logger.LogWarning(
                 ex,
-                "Nie udało się spingować hosta {Host}",
-                _options.Host);
+                "Nie udało się sprawdzić stanu skonfigurowanych hostów.");
 
             return BuildStatus(false, null, "unknown", null);
         }
+    }
+
+    private async Task<(bool Online, long? RoundtripTimeMs)> PingHostAsync(
+        string host,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            using var ping = new Ping();
+
+            PingReply reply = await ping.SendPingAsync(
+                host,
+                _options.PingTimeoutMs);
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (reply.Status == IPStatus.Success)
+            {
+                return (true, reply.RoundtripTime);
+            }
+        }
+        catch (Exception ex) when (
+            ex is PingException
+            or InvalidOperationException
+            or ArgumentException)
+        {
+            _logger.LogDebug(
+                ex,
+                "Host {Host} nie odpowiada na ping.",
+                host);
+        }
+
+        return (false, null);
     }
 
     public async Task<MachineActionResult> WakeAsync(

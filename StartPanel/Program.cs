@@ -11,6 +11,9 @@ builder.Services.Configure<MachineOptions>(
 builder.Services.Configure<GpioButtonOptions>(
     builder.Configuration.GetSection(GpioButtonOptions.SectionName));
 
+builder.Services.Configure<NasOptions>(
+    builder.Configuration.GetSection(NasOptions.SectionName));
+
 builder.Services
     .AddOptions<PowerControlOptions>()
     .Bind(builder.Configuration.GetSection(PowerControlOptions.SectionName))
@@ -52,6 +55,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 builder.Services.AddHttpClient("GameDockAgent");
+builder.Services.AddHttpClient("GameDockNasAgent");
 builder.Services.AddSingleton<WakeOnLanService>();
 builder.Services.AddSingleton<UsbHidPowerOnService>();
 builder.Services.AddSingleton<IPowerOnService>(serviceProvider =>
@@ -75,6 +79,8 @@ builder.Services.AddSingleton<BootSequenceService>();
 builder.Services.AddHostedService<BootSequenceService>(serviceProvider =>
     serviceProvider.GetRequiredService<BootSequenceService>());
 builder.Services.AddSingleton<MachineMetricsService>();
+builder.Services.AddSingleton<NasControlService>();
+builder.Services.AddSingleton<NasMetricsService>();
 builder.Services.AddSingleton<GpioButtonService>();
 builder.Services.AddHostedService<GpioButtonService>(serviceProvider =>
     serviceProvider.GetRequiredService<GpioButtonService>());
@@ -177,6 +183,55 @@ app.MapPost("/api/machine/systems/{systemId}/boot", async (
         systemId,
         cancellationToken);
 
+    return result.Success
+        ? Results.Ok(result)
+        : Results.BadRequest(result);
+})
+.RequireRateLimiting("power");
+
+app.MapGet("/api/nas/status", async (
+    NasControlService nas,
+    CancellationToken cancellationToken) =>
+{
+    NasStatus status = await nas.GetStatusAsync(cancellationToken);
+    return Results.Ok(status);
+});
+
+app.MapGet("/api/nas/metrics", async (
+    NasMetricsService metrics,
+    CancellationToken cancellationToken) =>
+{
+    NasMetricsStatus status = await metrics.GetAsync(cancellationToken);
+    return Results.Ok(status);
+});
+
+app.MapPost("/api/nas/wake", async (
+    NasControlService nas,
+    CancellationToken cancellationToken) =>
+{
+    NasActionResult result = await nas.WakeAsync(cancellationToken);
+    return result.Success
+        ? Results.Accepted(value: result)
+        : Results.BadRequest(result);
+})
+.RequireRateLimiting("power");
+
+app.MapPost("/api/nas/shutdown", async (
+    NasControlService nas,
+    CancellationToken cancellationToken) =>
+{
+    NasActionResult result = await nas.ShutdownAsync(cancellationToken);
+    return result.Success
+        ? Results.Ok(result)
+        : Results.BadRequest(result);
+})
+.RequireRateLimiting("power");
+
+app.MapPost("/api/nas/restart", async (
+    NasControlService nas,
+    CancellationToken cancellationToken) =>
+{
+    NasActionResult result = await nas.RestartAsync(cancellationToken);
     return result.Success
         ? Results.Ok(result)
         : Results.BadRequest(result);
